@@ -1,5 +1,7 @@
 import time
 import serial
+import glob
+import os
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
@@ -17,16 +19,40 @@ SUB_TOPIC_NAME = "topic_control_signal"
 PORT='/dev/ttyACM0'
 #----------------------------------------------
 
-ser = serial.Serial(PORT, 115200, timeout=1)
-time.sleep(1)
+
+def find_serial_port(default_port=PORT):
+  env_port = os.environ.get('SKK_SERIAL_PORT')
+  if env_port:
+    return env_port
+
+  if os.path.exists(default_port):
+    return default_port
+
+  by_id_candidates = sorted(glob.glob('/dev/serial/by-id/*'))
+  if by_id_candidates:
+    return by_id_candidates[0]
+
+  tty_candidates = sorted(glob.glob('/dev/ttyACM*')) + sorted(glob.glob('/dev/ttyUSB*'))
+  if tty_candidates:
+    return tty_candidates[0]
+
+  raise FileNotFoundError(
+      'No serial device found. Connect the controller board or set SKK_SERIAL_PORT.'
+  )
 
 class SerialSenderNode(Node):
   def __init__(self, sub_topic=SUB_TOPIC_NAME):
     super().__init__('serial_sender_node')
     
     self.declare_parameter('sub_topic', sub_topic)
+    self.declare_parameter('port', PORT)
     
     self.sub_topic = self.get_parameter('sub_topic').get_parameter_value().string_value
+    requested_port = self.get_parameter('port').get_parameter_value().string_value
+    self.serial_port = find_serial_port(requested_port)
+    self.ser = serial.Serial(self.serial_port, 115200, timeout=1)
+    time.sleep(1)
+    self.get_logger().info(f'Using serial port: {self.serial_port}')
     
     qos_profile = QoSProfile(reliability=QoSReliabilityPolicy.RELIABLE, 
                              history=QoSHistoryPolicy.KEEP_LAST, 
@@ -41,7 +67,7 @@ class SerialSenderNode(Node):
     right_speed = msg.right_speed
 
     serial_msg =  PCFL.convert_serial_message(steering, left_speed, right_speed)
-    ser.write(serial_msg.encode())
+    self.ser.write(serial_msg.encode())
 
 def main(args=None):
   rclpy.init(args=args)
@@ -55,11 +81,12 @@ def main(args=None):
       left_speed = 0
       right_speed = 0
       message = PCFL.convert_serial_message(steering, left_speed, right_speed)
-      ser.write(message.encode())
+      node.ser.write(message.encode())
       pass
     
   finally:
-    ser.close()
+    if hasattr(node, 'ser'):
+      node.ser.close()
     print('closed')
     
   node.destroy_node()

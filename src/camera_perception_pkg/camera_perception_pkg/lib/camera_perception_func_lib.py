@@ -138,6 +138,8 @@ def edge_image_postproc(cv_image: np.array, show_image=True):
 	return roi_img
 
 def get_lane_center(cv_image: np.array, detection_height: int, detection_thickness: int, road_gradient: float, lane_width: int) -> int:
+	img_width = cv_image.shape[1]
+	image_center_x = (img_width - 1) / 2
 	detection_area_upper_bound = detection_height - int(detection_thickness/2)
 	detection_area_lower_bound = detection_height + int(detection_thickness/2)
 
@@ -146,7 +148,7 @@ def get_lane_center(cv_image: np.array, detection_height: int, detection_thickne
 	if (detected_x_coords.shape[0] < 5):
 		line_x_axis_pixel = None
 		center_pixel = None
-		return lane_width/2
+		return image_center_x
 	
 	cut_outliers_array = detected_x_coords[1:-1]
 	difference_array = cut_outliers_array[1:] - cut_outliers_array[:-1]
@@ -163,19 +165,20 @@ def get_lane_center(cv_image: np.array, detection_height: int, detection_thickne
 		line_x_axis_pixel = None
 		center_pixel = (left_val + right_val)/2
 	
-	if (center_pixel == None) & (line_x_axis_pixel == None):
-		road_target_point_x = (lane_width/2)
-	else:
+	if center_pixel is None and line_x_axis_pixel is None:
+		road_target_point_x = image_center_x
+	elif center_pixel is not None:
 		road_target_point_x = center_pixel
-		if (road_target_point_x == None) & (line_x_axis_pixel != None):
-			if road_gradient > 0:
-				road_target_point_x = line_x_axis_pixel + (lane_width/2)
-			else:
-				road_target_point_x = line_x_axis_pixel - (lane_width/2)
-			if road_target_point_x > (lane_width-1):
-				road_target_point_x = (lane_width-1)
-			elif road_target_point_x < 0:
-				road_target_point_x = 0
+	else:
+		if road_gradient > 0:
+			road_target_point_x = line_x_axis_pixel + (lane_width/2)
+		else:
+			road_target_point_x = line_x_axis_pixel - (lane_width/2)
+
+	if road_target_point_x > (img_width - 1):
+		road_target_point_x = (img_width - 1)
+	elif road_target_point_x < 0:
+		road_target_point_x = 0
 	
 	return road_target_point_x
 
@@ -213,4 +216,3 @@ def get_traffic_light_color(cv_image: np.array, bbox, hsv_ranges: dict) -> str:
 		return "Unknown"
 		
 		
-

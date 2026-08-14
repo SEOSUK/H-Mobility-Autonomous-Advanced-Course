@@ -1,0 +1,4 @@
+1786586492.1170402 [INFO] [launch]: All log files can be found below /home/seosuk/H-Mobility-Autonomous-Advanced-Course/.ros_log/2026-08-13-11-01-32-116370-seosuk-14
+1786586492.1171308 [INFO] [launch]: Default logging verbosity is set to INFO
+1786586492.1501133 [INFO] [motion_planner_node-1]: process started with pid [15]
+1786586492.1502228 [INFO] [auto_drive_control.py-2]: process started with pid [17]

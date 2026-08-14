@@ -59,6 +59,14 @@ class TrafficLightDetector(Node):
         
         traffic_light_detected = False
         for detection in detection_msg.detections:
+            if detection.class_name in ('red', 'orange', 'green'):
+                color_msg = String()
+                color_msg.data = detection.class_name.capitalize()
+                print(f'traffic light: {color_msg.data}')
+                self.publisher.publish(color_msg)
+                traffic_light_detected = True
+                break
+
             if detection.class_name == 'traffic_light':
 
                 hsv_ranges = {

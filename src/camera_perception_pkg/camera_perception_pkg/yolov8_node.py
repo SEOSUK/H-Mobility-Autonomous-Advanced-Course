@@ -63,6 +63,8 @@ class Yolov8Node(LifecycleNode):
         
         self.declare_parameter("threshold", 0.5)
         self.declare_parameter("enable", True)
+        self.declare_parameter("silent_mode", False)
+        self.declare_parameter("print_green_box_size", False)
         self.declare_parameter("image_reliability",
                                QoSReliabilityPolicy.RELIABLE)
 
@@ -82,6 +84,10 @@ class Yolov8Node(LifecycleNode):
 
         self.enable = self.get_parameter(
             "enable").get_parameter_value().bool_value
+        self.silent_mode = self.get_parameter(
+            "silent_mode").get_parameter_value().bool_value
+        self.print_green_box_size = self.get_parameter(
+            "print_green_box_size").get_parameter_value().bool_value
 
         self.reliability = self.get_parameter(
             "image_reliability").get_parameter_value().integer_value
@@ -246,10 +252,7 @@ class Yolov8Node(LifecycleNode):
         return keypoints_list
 
     def image_cb(self, msg: Image) -> None:
-        print(msg.header)
-
         if self.enable:
-
             # convert image + predict
             cv_image = self.cv_bridge.imgmsg_to_cv2(msg)
             results = self.yolo.predict(
@@ -292,6 +295,12 @@ class Yolov8Node(LifecycleNode):
                     aux_msg.keypoints = keypoints[i]
 
                 detections_msg.detections.append(aux_msg)
+
+                if self.print_green_box_size and aux_msg.class_name == 'green':
+                    print(
+                        f"green box width={aux_msg.bbox.size.x:.1f} height={aux_msg.bbox.size.y:.1f}",
+                        flush=True,
+                    )
 
             # publish detections
             detections_msg.header = msg.header

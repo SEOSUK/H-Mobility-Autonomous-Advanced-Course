@@ -28,5 +28,15 @@ install(
   DESTINATION share/${PROJECT_NAME}/
 )
 
+install(
+  DIRECTORY ../data_collection/
+  DESTINATION share/${PROJECT_NAME}/data_collection
+)
+
+install(
+  PROGRAMS scripts/auto_drive_control.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 
 ament_package()
