@@ -1,84 +1,208 @@
-# 2026 H-모빌리티 클래스 자율주행 심화과정
+<div align="center">
 
-<img src="docs/GitHub_banner.png" alt="자율주행 심화과정 입과를 환영합니다 — H-모빌리티 클래스 X 현대자동차" width="100%">
+# 🚗 H-Mobility Class Autonomous Driving
+### 2026 자율주행 심화과정 · Team 7 Final Project
 
-성균관대학교 자동화연구실의 H-모빌리티 클래스 자율주행 심화과정 실습 코드입니다.
+**Camera-based Perception · Lane Planning · Event-driven Decision Making · Vehicle Control**
+
+![ROS2](https://img.shields.io/badge/ROS%202-Humble-22314E?logo=ros&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)
+![YOLOv8](https://img.shields.io/badge/YOLOv8-Segmentation-111F68)
+![OpenCV](https://img.shields.io/badge/OpenCV-Vision-5C3EE8?logo=opencv&logoColor=white)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?logo=ubuntu&logoColor=white)
+
+</div>
 
 ---
 
-## 시작하기
+## Overview
 
-### 1. 개발 환경 설정 — 사전 온라인 강의 수강 (1 ~ 9번)
+H-Mobility Class 자율주행 심화과정의 최종평가를 위해 구현한 **ROS 2 기반 소형 자율주행 차량 시스템**입니다.
 
-eX-campus의 사전 온라인 강의를 **1번부터 9번까지** 순서대로 수강하며 개발 환경 설정을 모두 마칩니다.
+카메라 영상으로부터 YOLO 기반 차선·이벤트 정보를 인식하고, 차선 중심 경로를 생성한 뒤 조향 및 속도 명령을 계산하여 차량을 주행시킵니다. 별도의 LiDAR 기반 판단에 의존하지 않고, 카메라 인식 결과를 이용해 **차선 추종, 신호 대응, 장애물 구간 통과 및 최종 정지**까지 하나의 파이프라인으로 구성했습니다.
 
-| 강의 | 내용 |
-|:---:|---|
-| 0 | H-모빌리티 클래스 자율주행 심화과정 OT |
-| 1 | Ubuntu 22.04 설치 |
-| 2 | 시스템 업데이트 실행 |
-| 3 | Linux 기초 명령어 |
-| 4 | Terminator 설치 |
-| 5 | VS Code 설치 |
-| 6 | ROS2 설치 |
-| 7 | Arduino IDE 설치 |
-| 8 | 한국어 입력 설정 |
-| 9 | NVIDIA Driver 설치 |
+```mermaid
+flowchart LR
+    A[Camera] --> B[YOLOv8 Perception]
+    B --> C[Lane Extraction]
+    C --> D[Path Planning]
+    B --> E[Event Detection]
+    D --> F[Motion Planning]
+    E --> F
+    F --> G[Steering & Speed Control]
+    G --> H[Serial Communication]
+    H --> I[Vehicle]
+```
 
-### 2. git clone (10번)
+---
 
-- **`git clone`** 으로 복제하거나 (git clone 사용법은 **10번 강의**에서 설명합니다.)
+## Driving Demo
 
-> [주의]
-> **시뮬레이션 과제는 하단의 repository로 이동하여 git clone하여 주시기 바랍니다.**
-> 본 repository는 오프라인 교육에서 사용합니다.
-- 저장소 상단의 초록색 **`Code`** 버튼을 누른 뒤 **Download ZIP** 으로 압축 파일을 받아 원하는 위치에 풉니다.
+https://github.com/user-attachments/assets/c31f68aa-fa91-4740-bb26-dfd4248b6e04
+
+<div align="center">
+  <sub>Team 7 autonomous driving test</sub>
+</div>
+
+---
+
+## Perception
+
+### YOLO-based Lane Detection
+
+YOLO segmentation을 통해 주행 차선을 검출하고, 검출된 `lane2` 마스크를 Bird's-eye view 및 ROI 기반으로 후처리하여 경로 생성에 사용합니다.
+
+<div align="center">
+  <img width="95%" alt="YOLO lane detection" src="https://github.com/user-attachments/assets/ddaaab28-c1ad-43c9-ab59-930984e0ec8f" />
+  <br>
+  <sub>YOLO segmentation 기반 차선 검출 및 주행 경로 시각화</sub>
+</div>
+
+<br>
+
+### Event Detection & Stop Trigger
+
+`red`, `green`, `obstacle` 등의 검출 결과를 이용해 이벤트 기반 상태 전이를 수행합니다. 순간적인 검출 손실에 바로 반응하지 않도록 hold logic을 적용하고, 장애물 통과 및 녹색 표식 검출 조건을 이용해 최종 정지 시퀀스를 구성했습니다.
+
+<div align="center">
+  <img width="60%" alt="YOLO stop trigger" src="https://github.com/user-attachments/assets/ec8de6ab-3ad1-49e8-a6f8-e560fa65ca61" />
+  <br>
+  <sub>YOLO detection을 이용한 이벤트 판단 및 정지 트리거</sub>
+</div>
+
+---
+
+## Key Algorithms
+
+### 1. Lane Center & Path Generation
+
+- YOLO segmentation 결과에서 주행 차선 마스크 추출
+- Bird's-eye view 변환 및 하단 ROI를 이용한 원근 왜곡 영향 감소
+- 여러 높이에서 좌·우 차선 픽셀을 탐색하여 차선 중심점 계산
+- 한쪽 차선만 검출되는 경우 차선 폭과 도로 기울기를 이용해 중심점 보정
+- 복수의 중심점을 **Natural Cubic Spline**으로 보간하여 부드러운 주행 경로 생성
+
+### 2. Steering Control
+
+생성된 경로의 기울기를 조향 오차로 사용하며, **PID steering control**을 적용했습니다. 미분항의 영상 노이즈 민감도를 줄이기 위해 **2차 Butterworth Low-pass Filter**를 적용하고, 실제 차량의 조향 범위에 맞게 steering command를 제한했습니다.
+
+### 3. Event-driven Decision Making
+
+기본 상태에서는 차선을 추종하며 YOLO 검출 결과에 따라 주행 상태를 전환합니다.
+
+| Detection | Behavior |
+|---|---|
+| `lane2` | Lane following |
+| `red` | Stop & hold |
+| `obstacle` | Obstacle-event sequence |
+| `green` | Deceleration / final stop trigger |
+
+### 4. Vehicle Command
+
+목표 속도 명령에 smoothing을 적용하여 급격한 motor command 변화를 줄이고, 최종 steering/speed command를 ROS 2 topic을 통해 전달한 뒤 serial communication node에서 차량 제어기로 전송합니다.
+
+---
+
+## ROS 2 Architecture
+
+주요 실행 흐름은 `auto_driving.launch.py`에 통합되어 있습니다.
+
+```text
+camera_perception_pkg
+ ├─ image_publisher_node
+ ├─ yolov8_node
+ ├─ lane_info_extractor_node
+ └─ traffic_light_detector_node
+          │
+          ▼
+decision_making_pkg
+ ├─ path_planner_node
+ └─ motion_planner_node
+          │
+          ▼
+launch_pkg / auto_drive_control
+          │
+          ▼
+serial_communication_pkg
+ └─ serial_sender_node
+          │
+          ▼
+       Vehicle
+```
+
+### Main Packages
+
+| Package | Role |
+|---|---|
+| `camera_perception_pkg` | Camera input, YOLO inference, lane/event extraction |
+| `decision_making_pkg` | Path generation and motion decision |
+| `control` | Vehicle control utilities |
+| `serial_communication_pkg` | Vehicle command transmission |
+| `debug_pkg` | Detection / image visualization |
+| `launch_pkg` | Integrated ROS 2 launch configuration |
+| `skk_assign` | Model and course assignment resources |
+
+---
+
+## Run
+
+### 1. Clone Team 7 branch
 
 ```bash
-git clone https://github.com/SKKUAutoLab/H-Mobility-Autonomous-Advanced-Course.git
+git clone -b team-7 --recursive https://github.com/SEOSUK/H-Mobility-Autonomous-Advanced-Course.git
 cd H-Mobility-Autonomous-Advanced-Course
 ```
 
-### 3. 의존성 설치 — `install.sh` 실행 (10-1번)
-
-내려받은 폴더 안에서 설치 스크립트를 실행합니다. PyTorch·ultralytics·OpenCV 등 필요한 파이썬 패키지를 한 번에 설치합니다.
+### 2. Install dependencies
 
 ```bash
 bash install.sh
 ```
 
-> 스크립트 끝에서 **본인 그래픽카드 이름**(예: `NVIDIA GeForce RTX 4070`)이 출력되면 GPU 사용 준비가 된 것입니다.<br>
-> (`CPU only` 로 나오면 NVIDIA 드라이버 설치 상태를 확인하세요.)
-
-### 4. 워크스페이스 빌드 — `colcon build`
+### 3. Build
 
 ```bash
-source /opt/ros/humble/setup.bash   # ROS2 환경 불러오기
+source /opt/ros/humble/setup.bash
 colcon build --symlink-install
-```
-
-### 5. 환경 적용 — `source`
-
-빌드 결과(워크스페이스)를 현재 터미널에 적용합니다.
-
-```bash
 source install/setup.bash
 ```
 
-여기까지 완료하면 실행 준비가 끝납니다. 예시:
+### 4. Launch autonomous driving pipeline
 
 ```bash
-ros2 launch launch_pkg main.launch.py
+ros2 launch launch_pkg auto_driving.launch.py
 ```
 
----
-
-> ⚠️ 터미널을 새로 열 때마다 `source /opt/ros/humble/setup.bash` 와 `source install/setup.bash` 를 다시 실행해야 합니다.
+> Camera device, YOLO model/device, visualization window, perception/planning/control nodes can be enabled or configured through launch arguments.
 
 ---
 
-<a href="https://github.com/SKKUAutoLab/H-Mobility-Autonomous-Advanced-Course-Simulation" style="display: block; width: 100%;">
-  <img src="https://github.com/user-attachments/assets/934b84c8-667e-4228-be4a-d0c54dff827f" alt="H-Mobility-Autonomous-Advanced-Course-Simulation" style="display: block; width: 100%;">
-</a>
+## Project Notes
 
-<sub>본 저장소의 소스 코드는 <a href="LICENSE">GPL-3.0 License</a> 하에 공개됩니다. 교육·연구 목적으로 자유롭게 활용하실 수 있으며, 코드를 사용하거나 재배포하실 경우 성균관대학교 자동화연구실의 <i>H-모빌리티 클래스 자율주행 심화과정</i>을 출처로 밝혀 주시기 바랍니다.</sub>
+구현 과정, 최종평가 기록, 알고리즘 세부 설명 및 튜닝 내용은 아래 Notion 페이지에 정리했습니다.
+
+### 📘 [H-Mobility Class · Team 7 Project Notes](https://app.notion.com/p/08-17-1-3d732dc77e4c805aa08bdea103ec40bf)
+
+---
+
+## Highlights
+
+- ROS 2 기반 **Perception → Planning → Control** end-to-end pipeline 구성
+- YOLO segmentation 기반 차선 인식 및 주행 경로 생성
+- Natural Cubic Spline 기반 부드러운 lane-center path 생성
+- PID steering + Butterworth LPF 기반 조향 안정화
+- 카메라 검출만을 활용한 event-driven decision logic 구현
+- Red-light hold, obstacle pass, green-triggered final stop sequence 구현
+- 실차 주행 데이터 확보를 위한 주기적 camera frame logging 기능 구현
+
+---
+
+## Acknowledgement
+
+This repository is based on the **H-Mobility Class Autonomous Driving Advanced Course** materials provided by SKKU Automation Lab and was extended for the **Team 7 final project**.
+
+본 저장소의 원 교육용 코드 및 자료에 대한 저작권과 출처는 원 저작자에게 있으며, 프로젝트 구현 내용은 교육 및 연구 목적으로 정리했습니다.
+
+## License
+
+This repository follows the original project's [GPL-3.0 License](LICENSE).
